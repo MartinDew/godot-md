@@ -1,0 +1,22 @@
+# SCsub
+from misc.utility.scons_hints import *
+
+
+Import("env")
+
+# add a STORM_ENABLED define to the
+env["CPPDEFINES"].append("STORM_ENABLED")
+
+local_env = env.Clone()
+
+local_env.add_source_files(env.modules_sources, [Glob("*.cpp"), Glob("core/*.cpp")])
+
+include_dirs = ["core"]
+local_env.Append(CPPPATH=include_dirs)
+
+# needs to compile in cpp20
+
+if local_env["platform"] == "windows" and local_env["use_mingw"] is False:
+    local_env.Append(CPPFLAGS=["/std:c++20"])
+else:
+    local_env.Append(CPPFLAGS=["-std=c++20"])
