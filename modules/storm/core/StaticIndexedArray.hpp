@@ -9,6 +9,8 @@
 #include <stdexcept>
 #include <vector>
 
+namespace storm {
+
 // The elements of this class will stay at the same index in the container during their existence
 template <class T>
 class StaticIndexedArray {
@@ -358,4 +360,5 @@ typename StaticIndexedArray<T>::ConstIterator StaticIndexedArray<T>::end() const
 	};
 }
 
+} //namespace storm
 #endif

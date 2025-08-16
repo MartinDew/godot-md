@@ -1,15 +1,20 @@
-﻿#if 0
-#include "JobScheduler.hpp"
+﻿#include "JobScheduler.h"
 
-import <thread>;
+#include <assert.h>
+#include <memory>
+#include <thread>
+
+namespace storm {
+
+JobScheduler *JobScheduler::instance;
 
 Job::Job(const JobFunction &function, uint32_t id, bool unmanaged, const JobFunction &onJobFinishedFunction) :
 		function(function), id(id), isUnmanaged(unmanaged), onJobFinished(onJobFinishedFunction) {
-	Assert(function != nullptr, "Attempt to create a null job");
+	assert(function != nullptr); // Attempt to create a null job
 }
 
 void Job::Execute() {
-	std::unique_lock<spinlock> lock(stateMut);
+	std::unique_lock<Spinlock> lock(stateMut);
 	state = RUNNING;
 	lock.unlock();
 	function();
@@ -46,7 +51,6 @@ void Job::DecrementDependencies() {
 	uint32_t deps = dependencies.fetch_sub(1);
 
 	if (!isUnmanaged && state == PENDING && deps - 1 == 0u) {
-		DebugPrint("Job {} dependencies done and is now being queued", GetId());
 		JobScheduler::Get().QueueJob({ this });
 	}
 }
@@ -83,8 +87,7 @@ JobHandle &JobHandle::operator=(const JobHandle &other) {
 	return *this;
 }
 
-JobHandle::JobHandle(JobHandle &&other) noexcept
-		:
+JobHandle::JobHandle(JobHandle &&other) noexcept :
 		Handle(other) {
 	std::swap(jobRef, other.jobRef);
 }
@@ -104,8 +107,18 @@ void JobHandle::Wait() {
 	}
 }
 
-JobScheduler::JobScheduler() :
-		jobs() {
+JobScheduler *JobScheduler::GetPtr() {
+	assert(instance);
+	return instance;
+}
+
+JobScheduler &JobScheduler::Get() {
+	return *GetPtr();
+}
+
+JobScheduler::JobScheduler() {
+	instance = this;
+
 	threads.reserve(GetMaxConcurrency());
 	for (uint32_t i = 0; i < GetMaxConcurrency(); ++i) {
 		threads.emplace_back([] { JobScheduler::Get().MainFunction(); });
@@ -139,13 +152,13 @@ JobHandle JobScheduler::CreateJob(JobFunction function, uint32_t numDeps, JobFun
 void JobScheduler::Update() {}
 
 void JobScheduler::QueueJob(JobHandle job) {
-	std::unique_lock<spinlock> lock(cvLock);
+	std::unique_lock<Spinlock> lock(cvLock);
 	jobs.push_back({ job });
 	cvJobAdded.notify_one();
 }
 
 void JobScheduler::QueueJobs(Array<JobHandle> newJobs) {
-	std::unique_lock<spinlock> lock(cvLock);
+	std::unique_lock<Spinlock> lock(cvLock);
 	jobs.insert(jobs.end(), newJobs.begin(), newJobs.end());
 	cvJobAdded.notify_one();
 }
@@ -164,7 +177,7 @@ void JobScheduler::MainFunction() {
 		JobHandle job;
 
 		do {
-			std::unique_lock<spinlock> lock(cvLock);
+			std::unique_lock<Spinlock> lock(cvLock);
 			cvJobAdded.wait(lock, [&] { return !jobs.empty() || !run; });
 			if (!run && jobs.empty()) {
 				return;
@@ -178,4 +191,4 @@ void JobScheduler::MainFunction() {
 	}
 }
 
-#endif
+} //namespace storm

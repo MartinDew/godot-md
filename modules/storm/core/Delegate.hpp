@@ -6,6 +6,8 @@
 #include "Handle.hpp"
 #include "StaticIndexedArray.hpp"
 
+namespace storm {
+
 template <class... Args>
 class Delegate {
 	using DelegateFuncType = std::function<void(Args...)>;
@@ -44,4 +46,5 @@ public:
 	}
 };
 
+} //namespace storm
 #endif // STORM_CORE_DELEGATE_HPP

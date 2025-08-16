@@ -1,20 +1,26 @@
-﻿#if 0
-#ifndef JOBSCHEDULER_H
+﻿#ifndef JOBSCHEDULER_H
 #define JOBSCHEDULER_H
+
+#include "Delegate.hpp"
+#include "Handle.hpp"
+#include "spinlock.hpp"
+
+#include <core/object/class_db.h>
+#include <core/object/object.h>
 
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <thread>
 #include <vector>
 
-#include "Delegate.hpp"
-#include "Handle.hpp"
-#include "spinlock.hpp"
+namespace storm {
 
-using Array = std::vector;
+template <class T>
+using Array = std::vector<T>;
 
 using JobFunction = std::function<void()>;
 
@@ -36,7 +42,7 @@ class Job final {
 	Barrier *barrier = nullptr;
 	bool isUnmanaged;
 
-	spinlock stateMut;
+	Spinlock stateMut;
 
 	Job() = delete;
 
@@ -55,7 +61,7 @@ protected:
 	} state = PENDING;
 
 	bool SetBarrier(Barrier *newBarrier) {
-		std::unique_lock<spinlock> lock(stateMut);
+		std::unique_lock<Spinlock> lock(stateMut);
 		if (state == FINISHED || newBarrier == nullptr) {
 			return false;
 		}
@@ -104,20 +110,30 @@ public:
 	bool IsValid() const { return jobRef != nullptr; }
 };
 
-class JobScheduler final : public InstancedSingleton<JobScheduler> {
-	std::deque<JobHandle> jobs;
-	Array<std::jthread> threads;
+class JobScheduler final : public Object {
+	GDCLASS(JobScheduler, Object);
 
-	spinlock cvLock;
+	static JobScheduler *instance;
+
+	friend std::unique_ptr<JobScheduler>;
+
+private:
+	std::deque<JobHandle> jobs;
+	std::vector<std::jthread> threads;
+
+	Spinlock cvLock;
 	std::condition_variable_any cvJobAdded;
 	std::atomic_bool run = true;
+
+protected:
+	static void _bind_methods() {}
 
 protected:
 	friend class EntityComponentSystem;
 	friend class JobSystemWrapper;
 	friend Job;
 	void QueueJob(JobHandle job);
-	void QueueJobs(Array<JobHandle> jobs);
+	void QueueJobs(std::vector<JobHandle> jobs);
 	void MainFunction();
 
 	JobHandle CreateUnmanagedJob(JobFunction function, uint32_t numDeps = 0, JobFunction onJobFinished = nullptr);
@@ -125,6 +141,10 @@ protected:
 public:
 	JobScheduler();
 	~JobScheduler();
+
+	static JobScheduler *GetPtr();
+	static JobScheduler &Get();
+
 	static uint32_t GetMaxConcurrency();
 
 	JobHandle CreateJob(JobFunction function, uint32_t numDeps = 0, JobFunction onJobFinished = nullptr);
@@ -141,7 +161,7 @@ class Barrier {
 	std::atomic<int32_t> count = 0;
 
 	std::condition_variable_any cv;
-	spinlock spin;
+	Spinlock spin;
 
 public:
 	Barrier() = default;
@@ -165,7 +185,7 @@ public:
 		}
 	}
 
-	void AddJobs(Array<JobHandle> jobs) {
+	void AddJobs(std::vector<JobHandle> jobs) {
 		for (auto &j : jobs) {
 			AddJob(j);
 		}
@@ -179,7 +199,7 @@ public:
 	}
 
 	void Wait() {
-		std::unique_lock<spinlock> lock(spin);
+		std::unique_lock<Spinlock> lock(spin);
 		int32_t val = count;
 		while (val != 0u) {
 			cv.wait_for(lock, std::chrono::milliseconds(100), [this] { return count == 0u; });
@@ -197,5 +217,6 @@ Barrier &&JobScheduler::ExecuteDelegateAsync(Delegate<Targs...> &delegate, Targs
 	return std::move(barrier);
 }
 
+} //namespace storm
+
 #endif // JOBSCHEDULER_H
-#endif // 0

@@ -12,7 +12,7 @@ inline void Pause() {
 #endif
 }
 
-struct spinlock {
+struct Spinlock {
 	std::atomic<bool> lock_ = { 0 };
 
 	// Using snake_case to allow use with std mecanisms
